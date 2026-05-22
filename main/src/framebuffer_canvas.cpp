@@ -117,6 +117,18 @@ std::string read_fb_name(int index)
     return name;
 }
 
+bool is_internal_panel_name(const std::string &name)
+{
+    return name.find("st7789") != std::string::npos ||
+           name.find("panel-mipi-dbid") != std::string::npos ||
+           name.find("mipi-dbid") != std::string::npos;
+}
+
+bool device_exists(const std::string &path)
+{
+    return access(path.c_str(), R_OK | W_OK) == 0;
+}
+
 } // namespace
 
 FramebufferCanvas::FramebufferCanvas() = default;
@@ -391,23 +403,46 @@ std::string find_internal_framebuffer()
     if (env && *env) {
         return env;
     }
+    env = std::getenv("CARDPUTER_ZERO_FB");
+    if (env && *env) {
+        return env;
+    }
+    env = std::getenv("CARDPUTER_ZERO_FBDEV");
+    if (env && *env) {
+        return env;
+    }
 
     std::ifstream proc("/proc/fb");
     std::string line;
+    std::vector<int> framebuffer_indices;
     while (std::getline(proc, line)) {
         std::istringstream stream(line);
         int index = -1;
         std::string name;
         stream >> index >> name;
-        if (index >= 0 && name.find("st7789") != std::string::npos) {
+        if (index >= 0) {
+            framebuffer_indices.push_back(index);
+        }
+        if (index >= 0 && is_internal_panel_name(name)) {
             return "/dev/fb" + std::to_string(index);
         }
     }
 
     for (int index = 0; index < 8; ++index) {
         std::string name = read_fb_name(index);
-        if (name.find("st7789") != std::string::npos) {
+        if (is_internal_panel_name(name)) {
             return "/dev/fb" + std::to_string(index);
+        }
+    }
+
+    if (framebuffer_indices.size() == 1) {
+        return "/dev/fb" + std::to_string(framebuffer_indices.front());
+    }
+
+    for (int index = 0; index < 8; ++index) {
+        std::string path = "/dev/fb" + std::to_string(index);
+        if (device_exists(path)) {
+            return path;
         }
     }
 

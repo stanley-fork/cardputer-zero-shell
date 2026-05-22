@@ -31,6 +31,10 @@ int main()
     if (!canvas.open(fbdev)) {
         return 1;
     }
+    setenv("CARDPUTER_ZERO_FB", fbdev.c_str(), 0);
+    setenv("ZEROSHELL_FBDEV", fbdev.c_str(), 0);
+    setenv("LV_LINUX_FBDEV_DEVICE", fbdev.c_str(), 0);
+    setenv("APPLAUNCH_LINUX_FBDEV_DEVICE", fbdev.c_str(), 0);
 
     std::string keyboard = zero_shell::find_keyboard_device();
     zero_shell::InputDevice input;
@@ -48,4 +52,3 @@ int main()
     zero_shell::ShellUi ui(canvas, input, std::move(catalog));
     return ui.run();
 }
-
