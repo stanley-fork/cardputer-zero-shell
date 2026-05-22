@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Files
+TryExec=/opt/cardputer-zero-shell/scripts/files-fallback.sh
+Exec=/opt/cardputer-zero-shell/scripts/files-fallback.sh
+Terminal=true
+Icon=share/images/file_100.png
+Sysplause=true
+

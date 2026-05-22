@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=App Store
+TryExec=/opt/cardputer-zero-shell/scripts/app-store-fallback.sh
+Exec=/opt/cardputer-zero-shell/scripts/app-store-fallback.sh
+Terminal=true
+Icon=share/images/store_100.png
+Sysplause=true
+

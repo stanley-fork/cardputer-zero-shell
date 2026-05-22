@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=HDMI
+TryExec=/opt/cardputer-zero-shell/scripts/hdmi-menu.sh
+Exec=/opt/cardputer-zero-shell/scripts/hdmi-menu.sh
+Terminal=true
+Icon=share/images/ip_panel_100.png
+Sysplause=true
+

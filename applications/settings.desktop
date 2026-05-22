@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Settings
+TryExec=/opt/cardputer-zero-shell/scripts/settings-fallback.sh
+Exec=/opt/cardputer-zero-shell/scripts/settings-fallback.sh
+Terminal=true
+Icon=share/images/setting_100.png
+Sysplause=true
+
