@@ -77,6 +77,10 @@ Icon=share/images/cli_100.png
 Sysplause=false
 ```
 
+ZeroShell also watches the APPLaunch directory and reloads when package installs
+or manual file changes update the directory metadata. Press `R` if you want to
+force a reload immediately.
+
 ## Terminal Apps
 
 If an entry has:
@@ -156,4 +160,3 @@ ZeroShell is for the Cardputer Zero internal small screen.
 It is not the HDMI login path. HDMI can continue to use the base OS display manager, such as LightDM, as configured by `cardputer-zero-os` and Raspberry Pi OS.
 
 ZeroShell should not disable or replace HDMI login.
-

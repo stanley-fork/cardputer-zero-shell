@@ -30,7 +30,7 @@ std::filesystem::file_time_type catalog_mtime(const std::filesystem::path &dir)
         return {};
     }
 
-    std::filesystem::file_time_type latest{};
+    std::filesystem::file_time_type latest = std::filesystem::last_write_time(dir);
     for (const auto &entry : std::filesystem::directory_iterator(dir)) {
         if (!entry.is_regular_file() || entry.path().extension() != ".desktop") {
             continue;

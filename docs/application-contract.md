@@ -180,9 +180,19 @@ sudo install -m 0644 my-tool.desktop /usr/share/APPLaunch/applications/my-tool.d
 
 Then press `R` in ZeroShell to reload.
 
+Debian packages can install APPLaunch entries through their normal package
+layout. For example, a Cardputer-specific package may install:
+
+```text
+/usr/share/APPLaunch/applications/my-tool.desktop
+/usr/share/APPLaunch/share/images/my-tool.png
+```
+
+ZeroShell watches the APPLaunch directory metadata as well as entry mtimes, so
+package installs can be picked up without relying on packaged file timestamps.
+
 ## Fixed Tools
 
 Tools such as Settings, Files, Terminal, App Store, System Monitor and HDMI should be represented by `.desktop` files.
 
 They should not be hard-coded as C++ built-in apps.
-
