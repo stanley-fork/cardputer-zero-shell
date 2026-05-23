@@ -14,6 +14,7 @@
 #include <cstring>
 #include <ctime>
 #include <fcntl.h>
+#include <filesystem>
 #include <iostream>
 #include <linux/input-event-codes.h>
 #include <poll.h>
@@ -70,6 +71,19 @@ struct WindowTask {
     std::string app_id;
     std::string title;
 };
+
+bool same_tasks(const std::vector<WindowTask> &left, const std::vector<WindowTask> &right)
+{
+    if (left.size() != right.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < left.size(); ++i) {
+        if (left[i].app_id != right[i].app_id || left[i].title != right[i].title) {
+            return false;
+        }
+    }
+    return true;
+}
 
 constexpr Glyph kGlyphs[] = {
     {' ', {0x00,0x00,0x00,0x00,0x00,0x00,0x00}},
@@ -282,6 +296,40 @@ std::string runtime_command_path()
     return "/tmp/zero-shell-command";
 }
 
+std::filesystem::file_time_type catalog_mtime(const std::filesystem::path &dir)
+{
+    std::error_code ec;
+    if (!std::filesystem::is_directory(dir, ec)) {
+        return {};
+    }
+
+    std::filesystem::file_time_type latest = std::filesystem::last_write_time(dir, ec);
+    if (ec) {
+        latest = {};
+        ec.clear();
+    }
+
+    for (const auto &entry : std::filesystem::directory_iterator(dir, ec)) {
+        if (ec) {
+            break;
+        }
+        if (!entry.is_regular_file(ec) || entry.path().extension() != ".desktop") {
+            ec.clear();
+            continue;
+        }
+        auto mtime = std::filesystem::last_write_time(entry.path(), ec);
+        if (ec) {
+            ec.clear();
+            continue;
+        }
+        if (mtime > latest) {
+            latest = mtime;
+        }
+    }
+
+    return latest;
+}
+
 bool can_launch_in_wayland(const zero_shell::AppEntry &app)
 {
     std::string display = lowercase_ascii(app.zero_display);
@@ -332,6 +380,7 @@ private:
     bool create_buffer(Buffer &buffer);
     Buffer *next_buffer();
     void load_apps();
+    void reload_apps_if_changed();
     void refresh_tasks(bool force = false);
     void process_commands();
     void update_launch_status();
@@ -352,6 +401,8 @@ private:
     void draw_battery(uint32_t *pixels);
     void debug_log(const std::string &message);
     bool is_app_running(const zero_shell::AppEntry &app) const;
+    bool task_matches_app(const WindowTask &task, const zero_shell::AppEntry &app) const;
+    bool focus_app_task(const zero_shell::AppEntry &app);
 
     wl_display *display_ = nullptr;
     wl_registry *registry_ = nullptr;
@@ -373,6 +424,8 @@ private:
     std::string status_message_;
     std::chrono::steady_clock::time_point status_until_{};
     std::FILE *debug_file_ = nullptr;
+    std::filesystem::path applications_dir_;
+    std::filesystem::file_time_type last_catalog_mtime_{};
     std::vector<zero_shell::AppEntry> apps_;
     std::vector<WindowTask> tasks_;
     std::chrono::steady_clock::time_point tasks_last_refresh_{};
@@ -609,12 +662,26 @@ bool WaylandShell::init()
 void WaylandShell::load_apps()
 {
     const char *env = std::getenv("ZEROSHELL_APPLICATIONS_DIR");
-    zero_shell::AppCatalog catalog(env && *env ? env : "/usr/share/APPLaunch/applications");
+    applications_dir_ = env && *env ? env : "/usr/share/APPLaunch/applications";
+    zero_shell::AppCatalog catalog(applications_dir_);
     apps_ = catalog.load();
     if (current_index_ >= apps_.size()) {
         current_index_ = apps_.empty() ? 0 : apps_.size() - 1;
     }
+    last_catalog_mtime_ = catalog_mtime(applications_dir_);
     dirty_ = true;
+}
+
+void WaylandShell::reload_apps_if_changed()
+{
+    if (applications_dir_.empty()) {
+        return;
+    }
+
+    auto current_mtime = catalog_mtime(applications_dir_);
+    if (current_mtime != last_catalog_mtime_) {
+        load_apps();
+    }
 }
 
 void WaylandShell::refresh_tasks(bool force)
@@ -628,8 +695,11 @@ void WaylandShell::refresh_tasks(bool force)
     std::vector<WindowTask> tasks;
     FILE *pipe = popen("wlrctl toplevel list 2>/dev/null", "r");
     if (!pipe) {
-        tasks_ = std::move(tasks);
-        task_selection_ = 0;
+        if (!tasks_.empty() || task_selection_ != 0) {
+            tasks_.clear();
+            task_selection_ = 0;
+            dirty_ = true;
+        }
         return;
     }
 
@@ -662,9 +732,14 @@ void WaylandShell::refresh_tasks(bool force)
     }
     pclose(pipe);
 
+    bool changed = !same_tasks(tasks_, tasks);
+    size_t old_selection = task_selection_;
     tasks_ = std::move(tasks);
     if (task_selection_ >= tasks_.size()) {
         task_selection_ = tasks_.empty() ? 0 : tasks_.size() - 1;
+    }
+    if (changed || old_selection != task_selection_) {
+        dirty_ = true;
     }
 }
 
@@ -752,6 +827,7 @@ void WaylandShell::handle_key(uint16_t key)
         switch (key) {
         case KEY_TAB:
         case KEY_ESC:
+            refresh_tasks(true);
             task_view_ = false;
             dirty_ = true;
             return;
@@ -810,6 +886,15 @@ void WaylandShell::handle_key(uint16_t key)
         if (!apps_.empty()) {
             const auto &app = apps_[current_index_];
             if (can_launch_in_wayland(app)) {
+                refresh_tasks(true);
+                if (focus_app_task(app)) {
+                    set_status("OPEN", std::chrono::milliseconds(900));
+                    break;
+                }
+                if (launch_pending_ && app.id == launch_pending_app_.id) {
+                    set_status("LOADING", std::chrono::seconds(2));
+                    break;
+                }
                 launch_pending_ = true;
                 launch_pending_app_ = app;
                 launch_deadline_ = std::chrono::steady_clock::now() + std::chrono::seconds(8);
@@ -828,6 +913,7 @@ void WaylandShell::handle_key(uint16_t key)
         }
         break;
     case KEY_TAB:
+        refresh_tasks(true);
         task_view_ = !task_view_;
         dirty_ = true;
         break;
@@ -836,6 +922,7 @@ void WaylandShell::handle_key(uint16_t key)
         load_apps();
         break;
     case KEY_ESC:
+        refresh_tasks(true);
         task_view_ = false;
         dirty_ = true;
         break;
@@ -1114,20 +1201,36 @@ void WaylandShell::draw_task_panel(uint32_t *pixels)
 
 bool WaylandShell::is_app_running(const zero_shell::AppEntry &app) const
 {
+    return std::any_of(tasks_.begin(), tasks_.end(), [&](const WindowTask &task) {
+        return task_matches_app(task, app);
+    });
+}
+
+bool WaylandShell::task_matches_app(const WindowTask &task, const zero_shell::AppEntry &app) const
+{
     std::string app_id = lowercase_ascii(app.zero_app_id.empty() ? app.id : app.zero_app_id);
     std::string wm_class = lowercase_ascii(app.startup_wm_class);
     std::string name = display_ascii(app.name);
 
-    return std::any_of(tasks_.begin(), tasks_.end(), [&](const WindowTask &task) {
-        std::string task_app_id = lowercase_ascii(task.app_id);
-        if (!task_app_id.empty() &&
-            (task_app_id == app_id || (!wm_class.empty() && task_app_id == wm_class))) {
+    std::string task_app_id = lowercase_ascii(task.app_id);
+    if (!task_app_id.empty() &&
+        (task_app_id == app_id || (!wm_class.empty() && task_app_id == wm_class))) {
+        return true;
+    }
+
+    std::string title = display_ascii(task.title);
+    return !name.empty() && title.find(name) != std::string::npos;
+}
+
+bool WaylandShell::focus_app_task(const zero_shell::AppEntry &app)
+{
+    for (size_t i = 0; i < tasks_.size(); ++i) {
+        if (task_matches_app(tasks_[i], app)) {
+            focus_task(i);
             return true;
         }
-
-        std::string title = display_ascii(task.title);
-        return !name.empty() && title.find(name) != std::string::npos;
-    });
+    }
+    return false;
 }
 
 void WaylandShell::render()
@@ -1184,6 +1287,8 @@ int WaylandShell::run()
     auto last_tick = std::chrono::steady_clock::now();
     while (running_ && wl_display_get_error(display_) == 0) {
         process_commands();
+        reload_apps_if_changed();
+        refresh_tasks(false);
         update_launch_status();
         wl_display_dispatch_pending(display_);
         auto now = std::chrono::steady_clock::now();
