@@ -22,23 +22,6 @@ std::string trim(std::string value)
     return value;
 }
 
-bool parse_bool(const std::string &value, bool default_value)
-{
-    std::string v;
-    v.reserve(value.size());
-    for (char ch : value) {
-        v.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
-    }
-
-    if (v == "true" || v == "1" || v == "yes") {
-        return true;
-    }
-    if (v == "false" || v == "0" || v == "no") {
-        return false;
-    }
-    return default_value;
-}
-
 std::string first_token(const std::string &command)
 {
     std::istringstream stream(command);
@@ -110,8 +93,6 @@ bool parse_desktop_file(const std::filesystem::path &path, AppEntry &entry)
     entry.startup_wm_class = values["StartupWMClass"];
     entry.zero_app_id = values["X-Zero-AppId"];
     entry.zero_display = values["X-Zero-Display"];
-    entry.terminal = parse_bool(values["Terminal"], false);
-    entry.sysplause = parse_bool(values["Sysplause"], true);
 
     return !entry.name.empty() && !entry.exec.empty();
 }

@@ -37,30 +37,6 @@ add_custom_command(
     DEPENDS "${XDG_SHELL_PROTOCOL}"
 )
 
-add_executable(zero-shell
-    main/src/app_catalog.cpp
-    main/src/framebuffer_canvas.cpp
-    main/src/image.cpp
-    main/src/input_device.cpp
-    main/src/main.cpp
-    main/src/process_runner.cpp
-    main/src/shell_ui.cpp
-    main/src/status.cpp
-    main/src/pty_terminal.cpp
-)
-
-target_include_directories(zero-shell PRIVATE main/include)
-
-target_compile_options(zero-shell PRIVATE
-    -Wall
-    -Wextra
-    -Wpedantic
-)
-
-target_link_libraries(zero-shell PRIVATE util PNG::PNG)
-
-install(TARGETS zero-shell RUNTIME DESTINATION /opt/cardputer-zero-shell/bin)
-
 add_executable(zero-shell-wayland
     main/src/app_catalog.cpp
     main/src/image.cpp

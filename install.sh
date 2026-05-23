@@ -50,20 +50,6 @@ else
         -o "$BUILD_DIR/xdg-shell-protocol.o"
     "$CXX" -std=c++17 -Wall -Wextra -Wpedantic \
         -I"$ROOT_DIR/main/include" \
-        "$ROOT_DIR/main/src/app_catalog.cpp" \
-        "$ROOT_DIR/main/src/framebuffer_canvas.cpp" \
-        "$ROOT_DIR/main/src/image.cpp" \
-        "$ROOT_DIR/main/src/input_device.cpp" \
-        "$ROOT_DIR/main/src/main.cpp" \
-        "$ROOT_DIR/main/src/process_runner.cpp" \
-        "$ROOT_DIR/main/src/pty_terminal.cpp" \
-        "$ROOT_DIR/main/src/shell_ui.cpp" \
-        "$ROOT_DIR/main/src/status.cpp" \
-        $(pkg-config --cflags --libs libpng 2>/dev/null || printf '%s' '-lpng') \
-        -lutil \
-        -o "$BUILD_DIR/zero-shell"
-    "$CXX" -std=c++17 -Wall -Wextra -Wpedantic \
-        -I"$ROOT_DIR/main/include" \
         -I"$BUILD_DIR" \
         "$ROOT_DIR/main/src/app_catalog.cpp" \
         "$ROOT_DIR/main/src/image.cpp" \
@@ -78,10 +64,8 @@ install -d -m 0755 /opt/cardputer-zero-shell/bin
 install -d -m 0755 /usr/share/APPLaunch/applications
 install -d -m 0755 /usr/share/APPLaunch/share/images
 
-install -m 0755 "$BUILD_DIR/zero-shell" /opt/cardputer-zero-shell/bin/zero-shell
 install -m 0755 "$BUILD_DIR/zero-shell-wayland" /opt/cardputer-zero-shell/bin/zero-shell-wayland
 
 echo "cardputer-zero-shell installed:"
-echo "  /opt/cardputer-zero-shell/bin/zero-shell"
 echo "  /opt/cardputer-zero-shell/bin/zero-shell-wayland"
 echo "  /usr/share/APPLaunch/applications"

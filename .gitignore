@@ -15,8 +15,7 @@ dist/
 *.bin
 
 # Generated local binaries
-zero-shell
-main/zero-shell
+zero-shell-wayland
 
 # CMake and compile databases
 CMakeCache.txt
@@ -54,4 +53,3 @@ __pycache__/
 *~
 .DS_Store
 Thumbs.db
-

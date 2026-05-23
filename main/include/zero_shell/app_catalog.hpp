@@ -16,8 +16,6 @@ struct AppEntry {
     std::string startup_wm_class;
     std::string zero_app_id;
     std::string zero_display;
-    bool terminal = false;
-    bool sysplause = true;
 };
 
 class AppCatalog {

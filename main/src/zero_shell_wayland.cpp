@@ -333,14 +333,7 @@ std::filesystem::file_time_type catalog_mtime(const std::filesystem::path &dir)
 bool can_launch_in_wayland(const zero_shell::AppEntry &app)
 {
     std::string display = lowercase_ascii(app.zero_display);
-    if (display == "wayland" || display == "xwayland") {
-        return true;
-    }
-    if (display == "framebuffer" || display == "fbdev" || display == "direct-fb") {
-        return false;
-    }
-
-    return false;
+    return display == "wayland" || display == "xwayland";
 }
 
 uint16_t normalize_wayland_key(uint32_t key)
@@ -767,8 +760,10 @@ void WaylandShell::process_commands()
             task_view_ = !task_view_;
             dirty_ = true;
         } else if (command == "hide-tasks") {
-            task_view_ = false;
-            dirty_ = true;
+            if (task_view_) {
+                task_view_ = false;
+                dirty_ = true;
+            }
         } else if (command == "reload-apps") {
             load_apps();
         }
@@ -922,9 +917,6 @@ void WaylandShell::handle_key(uint16_t key)
         load_apps();
         break;
     case KEY_ESC:
-        refresh_tasks(true);
-        task_view_ = false;
-        dirty_ = true;
         break;
     default:
         break;
