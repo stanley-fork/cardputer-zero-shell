@@ -8,6 +8,7 @@ It provides:
 
 - 320x170 launcher UI,
 - APPLaunch desktop-entry scan,
+- launcher category filtering from desktop-entry `Categories=`,
 - PNG icon loading,
 - status display,
 - non-blocking app launch,
@@ -62,6 +63,17 @@ The home screen contains:
 
 The task panel shows compositor-visible windows, excluding ZeroShell itself.
 
+The category drawer is a right-side launcher filter panel. It is visually
+similar to the task panel, but it is not backed by compositor state. Its source
+of truth is APPLaunch desktop-entry metadata:
+
+- `Categories=` is the only category source.
+- `All` is always present and means no filter.
+- Apps with no usable category appear under `Other`.
+- Moving the category selection updates the visible launcher apps immediately.
+- `Enter` accepts the selected category and closes the drawer.
+- `Esc` or the category shortcut closes the drawer without changing task state.
+
 ## App Launch
 
 ZeroShell launches the selected entry only when:
@@ -88,6 +100,10 @@ ZeroShell must not special-case concrete app names.
 Task facts must come from `zero-window-agent`. Matching desktop metadata to a
 reported task is allowed; creating a task from desktop metadata alone is not.
 
+Category facts must come from desktop-entry `Categories=` values. Category
+filtering must not use process state, task state, app names, icon names, or
+running windows as classification facts.
+
 ## Security
 
 ZeroShell must:
@@ -96,6 +112,7 @@ ZeroShell must:
 - launch apps as the current user,
 - avoid arbitrary privilege wrappers,
 - rely on `cardputer-zero-os` for privileged helper policy.
+- keep launcher category filtering inside launcher state, not task state.
 
 ## Environment
 
@@ -117,6 +134,7 @@ Production paths:
 - The shell is a Wayland client.
 - The compositor owns output and window management.
 - A task is a compositor toplevel/window.
+- A launcher category is a filter over desktop-entry `Categories=`.
 - `zero-window-agent` is the only production task-state and task-action
   backend.
 - ZeroShell must not invoke or parse `wlrctl`.
@@ -124,5 +142,7 @@ Production paths:
 - ZeroShell must not treat forked children or process groups as tasks.
 - Missing task backend is an explicit offline state, not a fallback trigger.
 - Fixed tools are desktop entries, not built-in shell pages.
+- Category filtering must not create, infer, activate, minimize, close, or
+  otherwise describe a running task.
 - Shell failure is handled by the OS/session layer, not by an alternate shell
   implementation.

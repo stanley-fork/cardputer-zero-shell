@@ -30,6 +30,27 @@ std::string first_token(const std::string &command)
     return token;
 }
 
+std::vector<std::string> split_desktop_list(const std::string &value)
+{
+    std::vector<std::string> items;
+    std::set<std::string> seen;
+    size_t start = 0;
+    while (start <= value.size()) {
+        size_t end = value.find(';', start);
+        std::string item = trim(end == std::string::npos
+            ? value.substr(start)
+            : value.substr(start, end - start));
+        if (!item.empty() && seen.insert(item).second) {
+            items.push_back(item);
+        }
+        if (end == std::string::npos) {
+            break;
+        }
+        start = end + 1;
+    }
+    return items;
+}
+
 std::string shell_quote(const std::string &value)
 {
     std::string quoted = "'";
@@ -93,6 +114,7 @@ bool parse_desktop_file(const std::filesystem::path &path, AppEntry &entry)
     entry.startup_wm_class = values["StartupWMClass"];
     entry.zero_app_id = values["X-Zero-AppId"];
     entry.zero_display = values["X-Zero-Display"];
+    entry.categories = split_desktop_list(values["Categories"]);
 
     return !entry.name.empty() && !entry.exec.empty();
 }

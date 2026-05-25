@@ -16,6 +16,7 @@ struct AppEntry {
     std::string startup_wm_class;
     std::string zero_app_id;
     std::string zero_display;
+    std::vector<std::string> categories;
 };
 
 class AppCatalog {

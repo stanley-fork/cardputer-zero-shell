@@ -55,6 +55,7 @@ minimize, close, stacking, and app windows belong to the compositor layer.
 
 - launcher UI,
 - APPLaunch desktop-entry scanning,
+- category filtering from desktop-entry `Categories=`,
 - non-blocking app launch,
 - running badges,
 - task list display,
@@ -122,6 +123,7 @@ Name=LoFiBox
 Exec=lofibox
 TryExec=lofibox
 Icon=share/images/lofibox.png
+Categories=Audio;Player;
 X-Zero-Display=xwayland
 StartupWMClass=lofibox
 ```
@@ -133,6 +135,7 @@ Supported fields:
 | `Name` | Display name. |
 | `Exec` | Command launched by ZeroShell. |
 | `Icon` | Icon path. Relative `share/...` paths resolve under `/usr/share/APPLaunch`. |
+| `Categories` | Desktop-entry categories used by the launcher category drawer. |
 | `TryExec` | Hide the entry when the command is unavailable. |
 | `X-Zero-ShortName` | Optional short launcher label. |
 | `StartupWMClass` | Xwayland/X11 matching hint. |
@@ -152,6 +155,10 @@ X-Zero-Display=xwayland
 ```
 
 Entries without one of those values are not launched by this shell.
+
+The launcher category drawer filters apps only through `Categories=` values.
+`All` is always present and means no filter. Apps without a usable category are
+shown under `Other`.
 
 ## Task Model
 
@@ -192,8 +199,18 @@ Home:
 | --- | --- |
 | `Left` / `Right` | Select app. |
 | `Enter` | Launch selected app, or focus it if already running. |
+| `C` | Toggle category drawer and filter apps by `Categories=`. |
 | `Tab` | Toggle running task panel. |
 | `R` | Reload APPLaunch entries. |
+
+Category drawer:
+
+| Key | Behavior |
+| --- | --- |
+| `Up` / `Down` | Select category and immediately filter apps. |
+| `Left` / `Right` | Select category and immediately filter apps. |
+| `Enter` | Keep selected category and close the drawer. |
+| `C` / `Esc` | Hide category drawer. |
 
 Running task panel:
 

@@ -44,6 +44,7 @@ Name=LoFiBox
 TryExec=lofibox
 Exec=lofibox
 Icon=share/images/lofibox.png
+Categories=Audio;Player;
 X-Zero-Display=xwayland
 StartupWMClass=lofibox
 ```
@@ -55,6 +56,7 @@ Supported fields:
 | `Name` | yes | Display name. |
 | `Exec` | yes | Command to launch. |
 | `Icon` | no | APPLaunch-compatible icon path. |
+| `Categories` | no | Desktop-entry categories used by the launcher category drawer. |
 | `TryExec` | no | Hide entry when the command is unavailable. |
 | `X-Zero-ShortName` | no | Short label for the 320x170 UI. |
 | `StartupWMClass` | no | Xwayland/X11 matching hint. |
@@ -62,6 +64,19 @@ Supported fields:
 | `X-Zero-Display` | yes | Runtime display contract: `wayland` or `xwayland`. |
 
 Unknown fields are ignored.
+
+## Categories
+
+`Categories=` is the only source used by ZeroShell's launcher category drawer.
+It follows the desktop-entry semicolon-list form:
+
+```ini
+Categories=Settings;System;
+```
+
+ZeroShell does not infer categories from app names, icons, commands, running
+tasks, or packages. `All` is added by the shell and means no filter. Apps with
+no usable `Categories=` value appear under `Other`.
 
 ## Display Contract
 

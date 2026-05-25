@@ -64,7 +64,8 @@ install -d -m 0755 /opt/cardputer-zero-shell/bin
 install -d -m 0755 /usr/share/APPLaunch/applications
 install -d -m 0755 /usr/share/APPLaunch/share/images
 
-install -m 0755 "$BUILD_DIR/zero-shell-wayland" /opt/cardputer-zero-shell/bin/zero-shell-wayland
+install -m 0755 "$BUILD_DIR/zero-shell-wayland" /opt/cardputer-zero-shell/bin/.zero-shell-wayland.new
+mv /opt/cardputer-zero-shell/bin/.zero-shell-wayland.new /opt/cardputer-zero-shell/bin/zero-shell-wayland
 
 echo "cardputer-zero-shell installed:"
 echo "  /opt/cardputer-zero-shell/bin/zero-shell-wayland"

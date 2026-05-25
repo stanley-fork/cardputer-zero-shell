@@ -18,6 +18,7 @@
 #include <iostream>
 #include <linux/input-event-codes.h>
 #include <poll.h>
+#include <set>
 #include <string>
 #include <sys/socket.h>
 #include <sys/mman.h>
@@ -232,6 +233,30 @@ std::string display_ascii(std::string text)
         output.pop_back();
     }
     return output;
+}
+
+std::string category_label(std::string value)
+{
+    value = display_ascii(std::move(value));
+    value = uppercase_ascii(value);
+    if (value.empty()) {
+        value = "OTHER";
+    }
+    if (value.size() > 12) {
+        value.resize(12);
+    }
+    return value;
+}
+
+std::string category_key(std::string value)
+{
+    value.erase(value.begin(), std::find_if(value.begin(), value.end(), [](unsigned char ch) {
+        return !std::isspace(ch);
+    }));
+    value.erase(std::find_if(value.rbegin(), value.rend(), [](unsigned char ch) {
+        return !std::isspace(ch);
+    }).base(), value.end());
+    return value;
 }
 
 std::string label_for(const zero_shell::AppEntry &app, size_t max_chars = 8)
@@ -455,6 +480,9 @@ private:
     Buffer *next_buffer();
     void load_apps();
     void reload_apps_if_changed();
+    void rebuild_categories();
+    void apply_category_filter();
+    const zero_shell::AppEntry *selected_app() const;
     void init_task_backend();
     void reconnect_task_backend();
     void read_task_backend();
@@ -470,6 +498,7 @@ private:
     void render();
     void draw_frame(uint32_t *pixels);
     void draw_task_panel(uint32_t *pixels);
+    void draw_category_drawer(uint32_t *pixels);
     void clear(uint32_t *pixels, Color color);
     void fill_rect(uint32_t *pixels, int x, int y, int w, int h, Color color);
     void draw_rect(uint32_t *pixels, int x, int y, int w, int h, Color color);
@@ -501,12 +530,16 @@ private:
     bool debug_ = false;
     bool keyboard_focused_ = false;
     bool task_view_ = false;
+    bool category_view_ = false;
     std::string status_message_;
     std::chrono::steady_clock::time_point status_until_{};
     std::FILE *debug_file_ = nullptr;
     std::filesystem::path applications_dir_;
     std::filesystem::file_time_type last_catalog_mtime_{};
     std::vector<zero_shell::AppEntry> apps_;
+    std::vector<const zero_shell::AppEntry *> visible_apps_;
+    std::vector<std::string> categories_{"All"};
+    size_t category_selection_ = 0;
     std::vector<WindowTask> tasks_;
     std::vector<WindowTask> pending_tasks_;
     bool reading_task_snapshot_ = false;
@@ -752,11 +785,71 @@ void WaylandShell::load_apps()
     applications_dir_ = env && *env ? env : "/usr/share/APPLaunch/applications";
     zero_shell::AppCatalog catalog(applications_dir_);
     apps_ = catalog.load();
-    if (current_index_ >= apps_.size()) {
-        current_index_ = apps_.empty() ? 0 : apps_.size() - 1;
-    }
+    rebuild_categories();
+    apply_category_filter();
     last_catalog_mtime_ = catalog_mtime(applications_dir_);
     dirty_ = true;
+}
+
+void WaylandShell::rebuild_categories()
+{
+    std::string selected = category_selection_ < categories_.size() ? categories_[category_selection_] : "All";
+    std::set<std::string> seen;
+    std::vector<std::string> next{"All"};
+    for (const auto &app : apps_) {
+        if (app.categories.empty()) {
+            if (seen.insert("Other").second) {
+                next.push_back("Other");
+            }
+            continue;
+        }
+        for (const auto &category : app.categories) {
+            std::string key = category_key(category);
+            if (key.empty() || lowercase_ascii(key) == "all") {
+                continue;
+            }
+            if (seen.insert(key).second) {
+                next.push_back(key);
+            }
+        }
+    }
+
+    categories_ = std::move(next);
+    auto it = std::find(categories_.begin(), categories_.end(), selected);
+    category_selection_ = it == categories_.end()
+        ? 0
+        : static_cast<size_t>(std::distance(categories_.begin(), it));
+}
+
+void WaylandShell::apply_category_filter()
+{
+    visible_apps_.clear();
+    std::string selected = category_selection_ < categories_.size() ? categories_[category_selection_] : "All";
+    for (const auto &app : apps_) {
+        bool include = selected == "All";
+        if (!include && app.categories.empty()) {
+            include = selected == "Other";
+        }
+        if (!include) {
+            include = std::any_of(app.categories.begin(), app.categories.end(), [&](const std::string &category) {
+                return category_key(category) == selected;
+            });
+        }
+        if (include) {
+            visible_apps_.push_back(&app);
+        }
+    }
+    if (current_index_ >= visible_apps_.size()) {
+        current_index_ = visible_apps_.empty() ? 0 : visible_apps_.size() - 1;
+    }
+}
+
+const zero_shell::AppEntry *WaylandShell::selected_app() const
+{
+    if (current_index_ >= visible_apps_.size()) {
+        return nullptr;
+    }
+    return visible_apps_[current_index_];
 }
 
 void WaylandShell::reload_apps_if_changed()
@@ -960,9 +1053,13 @@ void WaylandShell::process_commands()
 
         if (command == "show-tasks") {
             task_view_ = true;
+            category_view_ = false;
             dirty_ = true;
         } else if (command == "toggle-tasks") {
             task_view_ = !task_view_;
+            if (task_view_) {
+                category_view_ = false;
+            }
             dirty_ = true;
         } else if (command == "hide-tasks") {
             if (task_view_) {
@@ -1058,14 +1155,49 @@ void WaylandShell::handle_key(uint16_t key)
         }
     }
 
+    if (category_view_) {
+        switch (key) {
+        case KEY_C:
+        case KEY_ESC:
+            category_view_ = false;
+            dirty_ = true;
+            return;
+        case KEY_LEFT:
+        case KEY_UP:
+            if (!categories_.empty()) {
+                category_selection_ = (category_selection_ + categories_.size() - 1) % categories_.size();
+                current_index_ = 0;
+                apply_category_filter();
+            }
+            dirty_ = true;
+            return;
+        case KEY_RIGHT:
+        case KEY_DOWN:
+            if (!categories_.empty()) {
+                category_selection_ = (category_selection_ + 1) % categories_.size();
+                current_index_ = 0;
+                apply_category_filter();
+            }
+            dirty_ = true;
+            return;
+        case KEY_ENTER:
+            category_view_ = false;
+            dirty_ = true;
+            return;
+        default:
+            return;
+        }
+    }
+
     switch (key) {
     case KEY_LEFT:
         if (debug_) {
             debug_log("action previous");
         }
         task_view_ = false;
-        if (!apps_.empty()) {
-            current_index_ = (current_index_ + apps_.size() - 1) % apps_.size();
+        category_view_ = false;
+        if (!visible_apps_.empty()) {
+            current_index_ = (current_index_ + visible_apps_.size() - 1) % visible_apps_.size();
             dirty_ = true;
         }
         break;
@@ -1074,8 +1206,9 @@ void WaylandShell::handle_key(uint16_t key)
             debug_log("action next");
         }
         task_view_ = false;
-        if (!apps_.empty()) {
-            current_index_ = (current_index_ + 1) % apps_.size();
+        category_view_ = false;
+        if (!visible_apps_.empty()) {
+            current_index_ = (current_index_ + 1) % visible_apps_.size();
             dirty_ = true;
         }
         break;
@@ -1084,8 +1217,9 @@ void WaylandShell::handle_key(uint16_t key)
             debug_log("action launch");
         }
         task_view_ = false;
-        if (!apps_.empty()) {
-            const auto &app = apps_[current_index_];
+        category_view_ = false;
+        if (const zero_shell::AppEntry *selected = selected_app()) {
+            const auto &app = *selected;
             if (can_launch_in_wayland(app)) {
                 if (focus_app_task(app)) {
                     set_status("OPEN", std::chrono::milliseconds(900));
@@ -1114,10 +1248,17 @@ void WaylandShell::handle_key(uint16_t key)
         break;
     case KEY_TAB:
         task_view_ = !task_view_;
+        category_view_ = false;
+        dirty_ = true;
+        break;
+    case KEY_C:
+        task_view_ = false;
+        category_view_ = !category_view_;
         dirty_ = true;
         break;
     case KEY_R:
         task_view_ = false;
+        category_view_ = false;
         load_apps();
         break;
     case KEY_ESC:
@@ -1343,18 +1484,31 @@ void WaylandShell::draw_frame(uint32_t *pixels)
     int y = kHeight - kBarHeight;
     fill_rect(pixels, 0, y, kWidth, kBarHeight, kPanel);
     draw_rect(pixels, 0, y, kWidth, kBarHeight, kLine);
-    fill_rect(pixels, 0, y, 82, kBarHeight, kTaskButton);
-    draw_rect(pixels, 0, y, 82, kBarHeight, kLine);
-    draw_rect(pixels, 6, y + 4, 22, 11, kInk);
-    draw_text(pixels, 9, y + 6, "TAB", kInk, 1);
-    draw_text(pixels, 34, y + 6, "TASK", kInk, 1);
-    fill_rect(pixels, 70, y + 4, 11, 11, kAccent);
-    draw_rect(pixels, 70, y + 4, 11, 11, kInk);
-    draw_text(pixels, 73, y + 6, std::to_string(tasks_.size()), kInk, 1);
-    draw_text(pixels, 94, y + 6, "< >", kMuted, 1);
-    draw_text(pixels, 118, y + 6, "SELECT", kMuted, 1);
-    draw_text(pixels, 190, y + 6, "ENTER OPEN", kInk, 1);
-    draw_text(pixels, 276, y + 6, "ESC", kMuted, 1);
+
+    fill_rect(pixels, 1, y + 1, 100, kBarHeight - 2, kTaskButton);
+    fill_rect(pixels, 6, y + 4, 24, 11, kIconWell);
+    draw_rect(pixels, 6, y + 4, 24, 11, kInk);
+    draw_text(pixels, 9, y + 6, "TAB", kAccent, 1);
+    draw_text(pixels, 36, y + 6, "TASK", kInk, 1);
+    fill_rect(pixels, 72, y + 4, 17, 11, kAccent);
+    draw_rect(pixels, 72, y + 4, 17, 11, kInk);
+    draw_text(pixels, 76, y + 6, std::to_string(tasks_.size()), kInk, 1);
+
+    fill_rect(pixels, 102, y + 1, 90, kBarHeight - 2, kPanel);
+    fill_rect(pixels, 101, y, 1, kBarHeight, kLine);
+    fill_rect(pixels, 110, y + 4, 12, 11, kIconWell);
+    draw_rect(pixels, 110, y + 4, 12, 11, kInk);
+    draw_text(pixels, 114, y + 6, "C", kAccent, 1);
+    draw_text(pixels, 129, y + 6, "CATEGORY", kInk, 1);
+
+    fill_rect(pixels, 193, y + 1, 126, kBarHeight - 2, kPanel);
+    fill_rect(pixels, 192, y, 1, kBarHeight, kLine);
+    std::string category = category_selection_ < categories_.size() ? categories_[category_selection_] : "All";
+    category = category_label(category);
+    if (category.size() > 13) {
+        category.resize(13);
+    }
+    draw_text(pixels, 205, y + 6, category, kAccent, 1);
 }
 
 void WaylandShell::draw_task_panel(uint32_t *pixels)
@@ -1390,6 +1544,62 @@ void WaylandShell::draw_task_panel(uint32_t *pixels)
         draw_rect(pixels, x + 6, item_y, w - 12, 14, selected ? kInk : kSoftLine);
         draw_text(pixels, x + 10, item_y + 3, selected ? ">" : " ", selected ? kInk : kMuted, 1);
         draw_text(pixels, x + 21, item_y + 3, label, selected ? kInk : kMuted, 1);
+    }
+}
+
+void WaylandShell::draw_category_drawer(uint32_t *pixels)
+{
+    int w = 124;
+    int h = categories_.empty() ? 38 : std::min(116, 20 + static_cast<int>(categories_.size()) * 15);
+    int x = kWidth - w;
+    int y = kHeight - kBarHeight - h;
+
+    fill_rect(pixels, x + 3, y + 3, w, h, kShadow);
+    fill_rect(pixels, x, y, w, h, kPanel);
+    draw_rect(pixels, x, y, w, h, kLine);
+    fill_rect(pixels, x, y, w, 17, kInk);
+    draw_text(pixels, x + 7, y + 5, "CATEGORIES", kPanel, 1);
+
+    if (categories_.empty()) {
+        draw_text(pixels, x + 8, y + 24, "NO CATEGORIES", kMuted, 1);
+        return;
+    }
+
+    size_t visible = std::min<size_t>(categories_.size(), 6);
+    size_t start = 0;
+    if (category_selection_ >= visible) {
+        start = category_selection_ - visible + 1;
+    }
+    if (start + visible > categories_.size()) {
+        start = categories_.size() - visible;
+    }
+
+    for (size_t row = 0; row < visible; ++row) {
+        size_t index = start + row;
+        int item_y = y + 20 + static_cast<int>(row) * 15;
+        bool selected = index == category_selection_;
+        std::string label = category_label(categories_[index]);
+        if (label.size() > 12) {
+            label.resize(12);
+        }
+        size_t count = 0;
+        if (categories_[index] == "All") {
+            count = apps_.size();
+        } else {
+            count = std::count_if(apps_.begin(), apps_.end(), [&](const zero_shell::AppEntry &app) {
+                if (app.categories.empty()) {
+                    return categories_[index] == "Other";
+                }
+                return std::any_of(app.categories.begin(), app.categories.end(), [&](const std::string &category) {
+                    return category_key(category) == categories_[index];
+                });
+            });
+        }
+        fill_rect(pixels, x + 6, item_y, w - 12, 13, selected ? kAccent : kPanel);
+        draw_rect(pixels, x + 6, item_y, w - 12, 13, selected ? kInk : kSoftLine);
+        draw_text(pixels, x + 10, item_y + 3, selected ? ">" : " ", selected ? kInk : kMuted, 1);
+        draw_text(pixels, x + 21, item_y + 3, label, selected ? kInk : kMuted, 1);
+        draw_text(pixels, x + w - 24, item_y + 3, std::to_string(count), selected ? kInk : kMuted, 1);
     }
 }
 
@@ -1443,16 +1653,42 @@ void WaylandShell::render()
         draw_text_centered(buffer->pixels, kWidth / 2, 58, "NO APPS", kInk, 1);
         draw_text_centered(buffer->pixels, kWidth / 2, 78, "APPLaunch/applications", kMuted, 1);
         draw_text_centered(buffer->pixels, kWidth / 2, 104, "PRESS R", kAccent, 1);
+    } else if (visible_apps_.empty()) {
+        draw_text_centered(buffer->pixels, kWidth / 2, 58, "NO APPS", kInk, 1);
+        draw_text_centered(buffer->pixels, kWidth / 2, 78,
+                           category_selection_ < categories_.size() ? category_label(categories_[category_selection_]) : "CATEGORY",
+                           kAccent, 1);
+        draw_text_centered(buffer->pixels, kWidth / 2, 104, "PRESS C", kMuted, 1);
     } else {
         const int xs[3] = {42, 119, 196};
         const int ys[3] = {50, 42, 50};
-        const int slot_order[3] = {1, 0, 2};
-        for (int order = 0; order < 3; ++order) {
-            int slot = slot_order[order];
-            int offset = slot - 1;
-            size_t index = (current_index_ + apps_.size() + offset) % apps_.size();
-            draw_app_card(buffer->pixels, xs[slot], ys[slot], apps_[index], slot == 1,
-                          is_app_running(apps_[index]));
+        if (visible_apps_.size() == 1) {
+            const zero_shell::AppEntry &app = *visible_apps_[0];
+            draw_app_card(buffer->pixels, xs[1], ys[1], app, true, is_app_running(app));
+        } else if (visible_apps_.size() == 2) {
+            const int slot_order[3] = {1, 0, 2};
+            const int neighbor_slot = current_index_ == 0 ? 2 : 0;
+            for (int wanted_slot : slot_order) {
+                if (wanted_slot == 1) {
+                    const zero_shell::AppEntry &app = *visible_apps_[current_index_];
+                    draw_app_card(buffer->pixels, xs[1], ys[1], app, true, is_app_running(app));
+                } else if (wanted_slot == neighbor_slot) {
+                    const size_t neighbor_index = current_index_ == 0 ? 1 : 0;
+                    const zero_shell::AppEntry &app = *visible_apps_[neighbor_index];
+                    draw_app_card(buffer->pixels, xs[neighbor_slot], ys[neighbor_slot], app, false,
+                                  is_app_running(app));
+                }
+            }
+        } else {
+            const int slot_order[3] = {1, 0, 2};
+            for (int wanted_slot : slot_order) {
+                const int offset = wanted_slot - 1;
+                const int count = static_cast<int>(visible_apps_.size());
+                const size_t index = static_cast<size_t>((static_cast<int>(current_index_) + count + offset) % count);
+                const zero_shell::AppEntry &app = *visible_apps_[index];
+                draw_app_card(buffer->pixels, xs[wanted_slot], ys[wanted_slot], app, wanted_slot == 1,
+                              is_app_running(app));
+            }
         }
         auto now = std::chrono::steady_clock::now();
         if (!status_message_.empty() && now < status_until_) {
@@ -1461,11 +1697,14 @@ void WaylandShell::render()
             if (!status_message_.empty()) {
                 status_message_.clear();
             }
-            draw_text_centered(buffer->pixels, kWidth / 2, 128, label_for(apps_[current_index_], 12), kInk, 1);
+            draw_text_centered(buffer->pixels, kWidth / 2, 128, label_for(*visible_apps_[current_index_], 12), kInk, 1);
         }
     }
     if (task_view_) {
         draw_task_panel(buffer->pixels);
+    }
+    if (category_view_) {
+        draw_category_drawer(buffer->pixels);
     }
 
     wl_surface_attach(surface_, buffer->buffer, 0, 0);
