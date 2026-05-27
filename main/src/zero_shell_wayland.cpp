@@ -510,6 +510,7 @@ private:
     void draw_battery(uint32_t *pixels);
     void debug_log(const std::string &message);
     bool is_app_running(const zero_shell::AppEntry &app) const;
+    bool is_launch_pending_for(const zero_shell::AppEntry &app) const;
     bool task_matches_app(const WindowTask &task, const zero_shell::AppEntry &app) const;
     bool focus_app_task(const zero_shell::AppEntry &app);
 
@@ -1225,7 +1226,7 @@ void WaylandShell::handle_key(uint16_t key)
                     set_status("OPEN", std::chrono::milliseconds(900));
                     break;
                 }
-                if (launch_pending_ && app.id == launch_pending_app_.id) {
+                if (is_launch_pending_for(app)) {
                     set_status("LOADING", std::chrono::seconds(2));
                     break;
                 }
@@ -1608,6 +1609,23 @@ bool WaylandShell::is_app_running(const zero_shell::AppEntry &app) const
     return std::any_of(tasks_.begin(), tasks_.end(), [&](const WindowTask &task) {
         return task_matches_app(task, app);
     });
+}
+
+bool WaylandShell::is_launch_pending_for(const zero_shell::AppEntry &app) const
+{
+    if (!launch_pending_) {
+        return false;
+    }
+    if (!app.id.empty() && app.id == launch_pending_app_.id) {
+        return true;
+    }
+    if (!app.exec.empty() && app.exec == launch_pending_app_.exec) {
+        return true;
+    }
+    std::string app_id = lowercase_ascii(app.zero_app_id.empty() ? app.id : app.zero_app_id);
+    std::string pending_app_id = lowercase_ascii(
+        launch_pending_app_.zero_app_id.empty() ? launch_pending_app_.id : launch_pending_app_.zero_app_id);
+    return !app_id.empty() && app_id == pending_app_id;
 }
 
 bool WaylandShell::task_matches_app(const WindowTask &task, const zero_shell::AppEntry &app) const

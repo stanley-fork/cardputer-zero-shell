@@ -3,6 +3,7 @@ build/
 build-*/
 out/
 dist/
+.docker-out/
 *.o
 *.obj
 *.a

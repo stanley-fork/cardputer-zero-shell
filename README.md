@@ -262,6 +262,21 @@ Output:
 build/zero-shell-wayland
 ```
 
+Build an arm64 device binary locally with Docker:
+
+```sh
+sh scripts/docker-build-arm64.sh
+```
+
+The Docker build is self-contained and writes only this deployable output:
+
+```text
+.docker-out/zero-shell-wayland
+```
+
+Use this path for device deployment. The target device should only receive the
+built artifact; it should not compile the shell during normal deployment.
+
 `install.sh` can compile directly when CMake is unavailable, but the Wayland
 build still needs `wayland-scanner`, `xdg-shell.xml`, `libpng`, and
 `libwayland-client`.
